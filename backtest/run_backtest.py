@@ -9,9 +9,15 @@
 
 import sys
 import os
+import csv
 import time
+import dataclasses
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta, date
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from data import find_instrument, get_candles
@@ -177,7 +183,83 @@ def print_stats(trades: list[Trade]) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Экспорт
+# ---------------------------------------------------------------------------
+
+def export_csv(trades: list[Trade], path: str = "backtest/results.csv") -> None:
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=[fi.name for fi in dataclasses.fields(Trade)])
+        w.writeheader()
+        for t in trades:
+            w.writerow(dataclasses.asdict(t))
+    print(f"CSV сохранён:    {path}")
+
+
+def plot_equity(trades: list[Trade], path: str = "backtest/equity.png") -> None:
+    if not trades:
+        return
+
+    equity = [0.0]
+    for t in trades:
+        equity.append(equity[-1] + t.pnl)
+
+    peak = equity[0]
+    drawdown = []
+    for e in equity:
+        peak = max(peak, e)
+        drawdown.append(e - peak)
+
+    colors = ["#2ecc71" if "win" in t.result else "#e74c3c" for t in trades]
+
+    fig, (ax1, ax2) = plt.subplots(
+        2, 1, figsize=(14, 8),
+        gridspec_kw={"height_ratios": [3, 1]},
+        facecolor="#1a1a2e",
+    )
+    for ax in (ax1, ax2):
+        ax.set_facecolor("#16213e")
+        for sp in ("top", "right"):
+            ax.spines[sp].set_visible(False)
+        ax.spines["left"].set_color("#444")
+        ax.spines["bottom"].set_color("#444")
+        ax.tick_params(colors="#aaa", labelsize=9)
+
+    x = range(len(equity))
+    ax1.plot(x, equity, color="#00d4ff", linewidth=2, zorder=3)
+    ax1.fill_between(x, equity, 0,
+                     where=[e >= 0 for e in equity], alpha=0.2, color="#2ecc71")
+    ax1.fill_between(x, equity, 0,
+                     where=[e < 0 for e in equity], alpha=0.2, color="#e74c3c")
+    ax1.fill_between(x, drawdown, 0, alpha=0.25, color="#e74c3c", label="Просадка")
+    ax1.axhline(0, color="#555", linewidth=0.8, linestyle="--")
+    wins = sum("win" in t.result for t in trades)
+    ax1.set_title(
+        f"ORB Strategy  |  {len(trades)} сделок  |  "
+        f"Winrate {wins/len(trades)*100:.1f}%  |  P&L {equity[-1]:+.0f} пп",
+        color="white", pad=10, fontsize=11,
+    )
+    ax1.set_ylabel("P&L, пп", color="#aaa")
+    ax1.grid(True, alpha=0.15, color="#444")
+    ax1.legend(facecolor="#16213e", labelcolor="#aaa", fontsize=9)
+
+    ax2.bar(range(len(trades)), [t.pnl for t in trades],
+            color=colors, width=0.8, alpha=0.85)
+    ax2.axhline(0, color="#555", linewidth=0.8)
+    ax2.set_ylabel("Сделка, пп", color="#aaa", fontsize=9)
+    ax2.set_xlabel("Сделка №", color="#aaa")
+    ax2.grid(True, alpha=0.15, color="#444", axis="y")
+
+    plt.tight_layout(pad=1.5)
+    plt.savefig(path, dpi=150, bbox_inches="tight", facecolor=fig.get_facecolor())
+    plt.close()
+    print(f"График сохранён: {path}")
+
+
+# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     trades = run_backtest(TICKER, DATE_FROM, DATE_TO)
     print_stats(trades)
+    if trades:
+        export_csv(trades)
+        plot_equity(trades)
