@@ -6,6 +6,7 @@ import pandas as pd
 SESSION_OPEN_UTC_HOUR = 7
 ORB_CANDLES = 2        # первые 2 свечи M5 формируют диапазон
 RR = 2.0               # соотношение риск/прибыль
+MAX_ORB = 400          # максимальный размер ORB в пунктах
 
 
 @dataclass
@@ -63,6 +64,8 @@ def get_signal(df: pd.DataFrame, candle_idx: int = -1) -> Signal | None:
     orb = opening_range(df)
     if orb is None:
         return None
+    if orb.size > MAX_ORB:
+        return None
 
     open_ts = _session_open(df)
     orb_end = open_ts + pd.Timedelta(minutes=5 * ORB_CANDLES)
@@ -81,25 +84,17 @@ def get_signal(df: pd.DataFrame, candle_idx: int = -1) -> Signal | None:
 
     # Лонг: пробой вверх И цена выше VWAP
     if close > orb.high and close > current_vwap:
-        entry = orb.high
+        entry = close
         stop = orb.low
-        return Signal(
-            direction="long",
-            entry=entry,
-            stop=stop,
-            take=entry + RR * (entry - stop),
-        )
+        take = orb.high + RR * (orb.high - orb.low)
+        return Signal(direction="long", entry=entry, stop=stop, take=take)
 
     # Шорт: пробой вниз И цена ниже VWAP
     if close < orb.low and close < current_vwap:
-        entry = orb.low
+        entry = close
         stop = orb.high
-        return Signal(
-            direction="short",
-            entry=entry,
-            stop=stop,
-            take=entry - RR * (orb.high - entry),
-        )
+        take = orb.low - RR * (orb.high - orb.low)
+        return Signal(direction="short", entry=entry, stop=stop, take=take)
 
     return None
 

@@ -63,20 +63,34 @@ def simulate_trade(df: pd.DataFrame, sig: Signal, entry_idx: int) -> Trade:
 
     for _, candle in after.iterrows():
         if sig.direction == "long":
-            if candle["low"] <= sig.stop:
+            hit_stop = candle["low"] <= sig.stop
+            hit_take = candle["high"] >= sig.take
+            if hit_stop and hit_take:
+                if abs(candle["open"] - sig.stop) <= abs(candle["open"] - sig.take):
+                    hit_take = False
+                else:
+                    hit_stop = False
+            if hit_stop:
                 pnl = sig.stop - sig.entry
                 return Trade(entry_date, "LONG", sig.entry, sig.stop, sig.take,
                              sig.stop, "loss", pnl)
-            if candle["high"] >= sig.take:
+            if hit_take:
                 pnl = sig.take - sig.entry
                 return Trade(entry_date, "LONG", sig.entry, sig.stop, sig.take,
                              sig.take, "win", pnl)
         else:  # short
-            if candle["high"] >= sig.stop:
+            hit_stop = candle["high"] >= sig.stop
+            hit_take = candle["low"] <= sig.take
+            if hit_stop and hit_take:
+                if abs(candle["open"] - sig.stop) <= abs(candle["open"] - sig.take):
+                    hit_take = False
+                else:
+                    hit_stop = False
+            if hit_stop:
                 pnl = sig.entry - sig.stop
                 return Trade(entry_date, "SHORT", sig.entry, sig.stop, sig.take,
                              sig.stop, "loss", pnl)
-            if candle["low"] <= sig.take:
+            if hit_take:
                 pnl = sig.entry - sig.take
                 return Trade(entry_date, "SHORT", sig.entry, sig.stop, sig.take,
                              sig.take, "win", pnl)
